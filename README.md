@@ -17,6 +17,17 @@ Install Node.js 20 or newer, then run `npm install` once and `npm run dev`. Open
 
 External catalog links are references only. Imported local images are embedded in the project file and browser save; keep images under 1 MB each and under 1.2 MB total per project. Check each asset's license on its source page before shipping a game.
 
+## Connect a local AI assistant
+
+The bundled MCP server exposes a small allowlist of tools for the currently open local editor: read project and object details, add and move objects, rename and resize objects, change primitive colors, and place an imported local image. It cannot delete objects or access arbitrary files. It binds only to `127.0.0.1`; it is not part of the public Vercel deployment.
+
+1. In this folder, run `npm install` once.
+2. Run `npm run mcp:install` once to add the tools to Codex.
+3. Restart Codex's MCP connections in Settings → MCP servers.
+4. Run `npm run dev` and open `http://localhost:5173`.
+
+The editor shows whether the local bridge is connected. Ask the assistant to inspect the scene or make a small change. To remove the connection later, run `codex mcp remove project-unicorn`.
+
 ## Development principles
 
 - Keep core project data engine-agnostic.

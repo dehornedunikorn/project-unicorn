@@ -5,12 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "mcp": "node server/mcp-server.js",
+    "mcp:install": "node server/install-codex-mcp.js",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "@babylonjs/core": "^8.30.0",
-    "phaser": "^3.90.0"
+    "@modelcontextprotocol/server": "^2.4.0",
+    "phaser": "^3.90.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "vite": "^6.4.1"

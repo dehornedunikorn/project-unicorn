@@ -15,6 +15,10 @@ let engineGeneration = 0;
 let saveTimer = null;
 let sidebarTab = "objects";
 let assetQuery = "";
+const assistantBridgeUrl = ["localhost", "127.0.0.1"].includes(location.hostname) ? "http://127.0.0.1:4174" : null;
+let assistantBridgeConnected = false;
+let assistantBridgeBusy = false;
+let assistantBridgeLastSync = 0;
 const assetCatalog = [
   { id: "kenney", name: "Kenney · ingyenes játékelemek", kind: "2D + 3D + hang", license: "CC0 · attribúció nem szükséges", url: "https://kenney.nl/assets", search: "kenney sprite 3d hang" },
   { id: "kenney-3d", name: "Kenney · 3D eszközök", kind: "3D modellek", license: "A csomag oldalán ellenőrizd · jellemzően CC0", url: "https://kenney.nl/assets/category:3D", search: "kenney 3d model" },
@@ -52,8 +56,8 @@ app.innerHTML = `
       <div class="inspector-head"><div><small>INSPECTOR</small><h2 id="inspector-title">No selection</h2></div><span class="inspector-icon">☷</span></div>
       <div id="inspector-content" class="inspector-content"></div>
       <div class="ai-panel">
-        <div class="ai-title"><span class="ai-spark">✳</span><div><b>Unicorn AI</b><small>COMMAND BRIDGE · PREVIEW</small></div><span class="beta">BETA</span></div>
-        <p>Describe a change in plain language. Commands are validated before they touch your project.</p>
+        <div class="ai-title"><span class="ai-spark">✳</span><div><b>Unicorn AI</b><small id="bridge-status">LOCAL MCP · KIKAPCSOLVA</small></div><span class="beta">BETA</span></div>
+        <p>Local assistant tools can read the scene and make validated edits while this editor is open.</p>
         <form id="ai-form"><textarea id="ai-input" rows="2" placeholder="e.g. add circle"></textarea><button class="button ai-send" type="submit">Run command ↗</button></form>
         <div id="ai-output" class="ai-output">Try: <code>add circle</code> · <code>move Player 300,200</code></div>
       </div>
@@ -89,6 +93,87 @@ function persist() {
       toast("Mentési hiba: " + error.message);
     }
   }, 250);
+}
+function setAssistantBridgeConnected(connected) {
+  assistantBridgeConnected = connected;
+  const label = document.querySelector("#bridge-status");
+  if (label) label.textContent = connected ? "LOCAL MCP · CSATLAKOZVA" : "LOCAL MCP · KIKAPCSOLVA";
+}
+function assistantProjectSnapshot() {
+  return {
+    id: project.id, name: project.name, mode: project.mode,
+    scenes: project.scenes.map(currentScene => ({ id: currentScene.id, name: currentScene.name, objects: currentScene.objects.map(object => ({ ...object })) })),
+    assets: (project.assets || []).map(({ dataUrl, ...asset }) => ({ ...asset, embedded: Boolean(dataUrl) }))
+  };
+}
+function applyAssistantEdit(command) {
+  const args = command.args || {};
+  const currentScene = scene();
+  if (command.type === "add_asset") {
+    const asset = project.assets.find(item => item.id === args.assetId && item.dataUrl);
+    if (!asset) throw new Error("Csak beágyazott helyi képet lehet a jelenethez adni.");
+    addImageObject(asset.id);
+    return { message: "Kép hozzáadva a jelenethez." };
+  }
+  const object = currentScene.objects.find(item => item.id === args.objectId);
+  const bounded = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+  if (command.type === "add_object") {
+    if (!["circle", "rect"].includes(args.type)) throw new Error("Csak kör vagy téglalap adható hozzá.");
+    if (args.x !== undefined && !bounded(args.x, -100000, 100000) || args.y !== undefined && !bounded(args.y, -100000, 100000)) throw new Error("A pozíció kívül esik az engedélyezett tartományon.");
+    checkpoint();
+    const index = currentScene.objects.length;
+    const added = { id: crypto.randomUUID(), name: String(args.name || (args.type === "circle" ? "Circle" : "Rectangle")).trim().slice(0, 80) || "Object", type: args.type, x: args.x ?? 320 + index * 24, y: args.y ?? 210 + index * 18, width: args.type === "circle" ? 64 : 100, height: args.type === "circle" ? 64 : 60, color: args.type === "circle" ? "#ffbd69" : "#46d6b0" };
+    currentScene.objects.push(added); selectedId = added.id; renderAll(); persist();
+    return { message: "Objektum hozzáadva.", object: added };
+  }
+  if (!object) throw new Error("Nem található ilyen objektum ebben a jelenetben.");
+  checkpoint();
+  if (command.type === "move_object") {
+    if (!bounded(args.x, -100000, 100000) || !bounded(args.y, -100000, 100000)) throw new Error("A pozíció kívül esik az engedélyezett tartományon.");
+    object.x = args.x; object.y = args.y;
+  } else if (command.type === "rename_object") {
+    const name = typeof args.name === "string" ? args.name.trim().slice(0, 80) : "";
+    if (!name) throw new Error("Az objektum neve nem lehet üres.");
+    object.name = name;
+  } else if (command.type === "resize_object") {
+    if (!bounded(args.width, 1, 2000) || !bounded(args.height, 1, 2000)) throw new Error("A méret 1 és 2000 képpont közé essen.");
+    object.width = args.width; object.height = args.height;
+  } else if (command.type === "set_color") {
+    if (object.type === "image" || typeof args.color !== "string" || !/^#[0-9a-f]{6}$/i.test(args.color)) throw new Error("Ezen az objektumon nem módosítható ez a szín.");
+    object.color = args.color;
+  } else {
+    history.pop();
+    throw new Error("Ez a művelet nincs engedélyezve.");
+  }
+  selectedId = object.id; renderAll(); persist();
+  return { message: "A módosítás elmentve.", object };
+}
+async function assistantBridgeTick() {
+  if (!assistantBridgeUrl || assistantBridgeBusy) return;
+  assistantBridgeBusy = true;
+  try {
+    if (!assistantBridgeConnected) {
+      const health = await fetch(`${assistantBridgeUrl}/health`, { cache: "no-store" });
+      if (!health.ok) return;
+      setAssistantBridgeConnected(true);
+    }
+    if (Date.now() - assistantBridgeLastSync > 1200) {
+      const stateResponse = await fetch(`${assistantBridgeUrl}/state`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: assistantProjectSnapshot() }) });
+      if (!stateResponse.ok) throw new Error("A helyi MCP-híd nem fogadta a projektet.");
+      assistantBridgeLastSync = Date.now();
+    }
+    const response = await fetch(`${assistantBridgeUrl}/commands`, { cache: "no-store" });
+    if (response.status === 204) return;
+    if (!response.ok) throw new Error("A helyi MCP-híd nem érhető el.");
+    const command = await response.json();
+    let result;
+    try { result = { ok: true, ...applyAssistantEdit(command) }; }
+    catch (error) { result = { ok: false, error: error.message }; }
+    await fetch(`${assistantBridgeUrl}/results`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: command.id, result }) });
+  } catch {
+    setAssistantBridgeConnected(false);
+    assistantBridgeLastSync = 0;
+  } finally { assistantBridgeBusy = false; }
 }
 function renderObjects() {
   document.querySelector("#object-count").textContent = String(scene().objects.length).padStart(2, "0");
@@ -351,3 +436,4 @@ document.querySelector("#grid-toggle").classList.toggle("active", project.settin
 document.querySelector("#save-status").textContent = restored ? "✓ Recovered" : "Ready";
 renderObjects(); renderAssetLibrary(); renderInspector(); renderEngine();
 if (!restored) persist();
+setInterval(assistantBridgeTick, 700);
