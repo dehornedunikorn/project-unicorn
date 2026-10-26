@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { createProject, validateProject } from "./project.js";
 import { saveProject, loadProject, downloadProject, readProjectFile } from "./storage.js";
 import { parseEditorCommand, applyEditorCommand } from "./ai-bridge.js";
+import { createTetris } from "./tetris.js";
 import "./style.css";
 
 const restored = loadProject();
@@ -10,6 +11,7 @@ let selectedId = project.scenes[0].objects[0]?.id || null;
 let statusText = restored ? "Projekt helyreállítva a helyi mentésből." : "Új projekt · automatikus mentés aktív";
 let history = [];
 let phaserGame = null;
+let tetrisGame = null;
 let babylonEngine = null;
 let engineGeneration = 0;
 let saveTimer = null;
@@ -31,7 +33,7 @@ app.innerHTML = `
   <header class="topbar">
     <a class="brand" href="#" aria-label="Project Unicorn"><span class="brand-mark">✳</span><span>PROJECT <b>UNICORN</b><small>AI GAME LAB · EARLY ACCESS</small></span></a>
     <div class="project-title"><span class="live-dot"></span><input id="project-name" aria-label="Projekt neve" maxlength="70" value=""></div>
-    <div class="top-actions"><span id="save-status" class="save-status"></span><button id="undo-btn" class="button quiet" title="Visszavonás">↶ Undo</button><button id="export-btn" class="button quiet">Export JSON</button><button id="import-btn" class="button primary">Import project ↑</button><input id="file-input" type="file" accept=".json,.unicorn.json,application/json" hidden></div>
+    <div class="top-actions"><span id="save-status" class="save-status"></span><button id="undo-btn" class="button quiet" title="Visszavonás">↶ Undo</button><button id="export-btn" class="button quiet">Projekt exportálása</button><button id="import-btn" class="button primary" title="Project Unicornból exportált JSON-fájl betöltése">Projekt importálása ↑</button><input id="file-input" type="file" accept=".json,.unicorn.json,application/json" hidden></div>
   </header>
   <div class="workspace">
     <aside class="sidebar">
@@ -47,7 +49,7 @@ app.innerHTML = `
       <div class="toolbar">
         <div class="mode-switch"><button data-mode="2d" class="mode-btn active">▦ 2D Editor</button><button data-mode="3d" class="mode-btn">◇ 3D Editor</button></div>
         <div class="tool-group"><button class="tool-btn active" title="Select">↖</button><button id="grid-toggle" class="tool-btn" title="Rács kapcsolása">▦</button><span class="separator"></span><span class="zoom-label">100%</span></div>
-        <button id="add-circle" class="button small">＋ Circle</button><button id="add-rect" class="button small">＋ Rectangle</button>
+        <button id="add-circle" class="button small">＋ Circle</button><button id="add-rect" class="button small">＋ Rectangle</button><button id="play-tetris" class="button small primary">▶ Tetris demo</button>
       </div>
       <section id="viewport" class="viewport"><div class="viewport-badge">MAIN SCENE <span>● LIVE</span></div><div class="canvas-hint">Click an object to select · Drag to move</div></section>
       <footer class="bottom-bar"><span><i class="status-dot"></i> Engine ready</span><span id="scene-info">Scene 01 / Main Scene</span><span>Autosave <b>ON</b> · Local</span></footer>
@@ -403,6 +405,10 @@ document.querySelector("#asset-file-input").addEventListener("change", async e =
 });
 document.querySelector("#add-rect").addEventListener("click", () => addObject("rect"));
 document.querySelector("#add-circle").addEventListener("click", () => addObject("circle"));
+document.querySelector("#play-tetris").addEventListener("click", () => {
+  if (tetrisGame) { tetrisGame.destroy(); tetrisGame = null; return; }
+  tetrisGame = createTetris(viewport, () => { tetrisGame = null; });
+});
 document.querySelector("#grid-toggle").addEventListener("click", e => {
   checkpoint(); project.settings.grid = !project.settings.grid; e.currentTarget.classList.toggle("active", project.settings.grid); renderEngine(); persist();
 });

@@ -33,6 +33,16 @@ export function downloadProject(project) {
 }
 
 export async function readProjectFile(file) {
-  const parsed = JSON.parse(await file.text());
+  const contents = (await file.text()).replace(/^\uFEFF/, "").trim();
+  if (!contents) throw new Error("A kiválasztott fájl üres. Válassz egy Project Unicornból exportált .json vagy .unicorn.json fájlt.");
+  if (contents.startsWith("<")) {
+    throw new Error("A kiválasztott fájl HTML weboldal, nem Project Unicorn projekt. Projekt betöltéséhez exportált .json fájl kell. A Tetris demót a felső sáv ▶ Tetris demo gombjával indítsd el.");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    throw new Error("A fájl tartalma nem érvényes JSON. Válassz egy Project Unicornból exportált .json vagy .unicorn.json fájlt.");
+  }
   return validateProject(parsed);
 }
