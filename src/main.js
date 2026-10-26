@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { Engine, Scene as BabylonScene, ArcRotateCamera, HemisphericLight, Vector3, MeshBuilder, StandardMaterial, Color3 } from "@babylonjs/core";
+import { Engine, Scene as BabylonScene, ArcRotateCamera, HemisphericLight, Vector3, MeshBuilder, StandardMaterial, Color3, Color4 } from "@babylonjs/core";
 import { createProject, cloneProject, validateProject } from "./project.js";
 import { saveProject, loadProject, downloadProject, readProjectFile } from "./storage.js";
 import { parseEditorCommand, applyEditorCommand } from "./ai-bridge.js";
@@ -193,7 +193,7 @@ function renderEngine() {
     const canvas = document.createElement("canvas"); canvas.className = "engine-canvas"; viewport.appendChild(canvas);
     babylonEngine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
     const world = new BabylonScene(babylonEngine);
-    world.clearColor = new (awaitlessColor())(0.08,0.1,0.15,1);
+    world.clearColor = new Color4(0.08,0.1,0.15,1);
     const camera = new ArcRotateCamera("camera", -Math.PI/2, Math.PI/3, 12, Vector3.Zero(), world);
     camera.attachControl(canvas, true);
     new HemisphericLight("light", new Vector3(0,1,0), world);
@@ -207,8 +207,6 @@ function renderEngine() {
     window.addEventListener("resize", () => babylonEngine?.resize(), { once: true });
   }
 }
-function awaitlessColor() { return class { constructor(r,g,b,a) { return {r,g,b,a}; } }; }
-
 function addObject(type) {
   checkpoint();
   const obj = { id: crypto.randomUUID(), name: type === "circle" ? "Circle" : "Rectangle", type, x: 320 + scene().objects.length*24, y: 180 + scene().objects.length*20, width: type === "circle" ? 64 : 100, height: type === "circle" ? 64 : 60, color: type === "circle" ? "#ffbd69" : "#46d6b0" };
@@ -216,7 +214,7 @@ function addObject(type) {
 }
 document.querySelectorAll("[data-mode]").forEach(btn => btn.addEventListener("click", () => {
   if (project.mode === btn.dataset.mode) return;
-  checkpoint(); project.mode = btn.dataset.mode; renderEngine();
+  checkpoint(); project.mode = btn.dataset.mode; renderEngine(); persist();
 }));
 document.querySelector("#new-object").addEventListener("click", () => addObject("rect"));
 document.querySelector("#add-rect").addEventListener("click", () => addObject("rect"));
