@@ -36,6 +36,7 @@ app.innerHTML = `
       <div class="sidebar-tabs"><button data-sidebar-tab="objects" class="sidebar-tab active">OBJECTS <span id="object-count">02</span></button><button data-sidebar-tab="assets" class="sidebar-tab">ASSETS</button></div>
       <div id="object-list" class="object-list"></div>
       <div id="asset-library" class="asset-library" hidden></div>
+      <input id="asset-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
       <div class="sidebar-footer"><span class="avatar">U</span><div><b>Unicorn Workspace</b><small>Local project</small></div><span class="status-pill">FREE</span></div>
     </aside>
     <main class="center">
@@ -96,7 +97,7 @@ function renderObjects() {
   document.querySelectorAll("[data-sidebar-tab]").forEach(btn => btn.classList.toggle("active", btn.dataset.sidebarTab === sidebarTab));
   document.querySelector("#object-list").innerHTML = scene().objects.map(o => `
     <button class="object-row ${o.id === selectedId ? "selected" : ""}" data-object-id="${o.id}">
-      <span class="object-glyph">${o.type === "circle" ? "◉" : "▰"}</span><span class="object-name">${escapeHtml(o.name)}</span><span class="object-color" style="background:${o.color}"></span>
+      <span class="object-glyph">${o.type === "circle" ? "◉" : o.type === "image" ? "▧" : "▰"}</span><span class="object-name">${escapeHtml(o.name)}</span><span class="object-color" style="background:${o.color || "#ffffff"}"></span>
     </button>`).join("");
   document.querySelectorAll("[data-object-id]").forEach(el => el.addEventListener("click", () => {
     selectedId = el.dataset.objectId; renderAll();
@@ -108,8 +109,10 @@ function renderAssetLibrary() {
   const q = assetQuery.toLowerCase();
   const catalog = assetCatalog.filter(item => `${item.name} ${item.kind} ${item.search}`.toLowerCase().includes(q));
   el.innerHTML = `<label class="asset-search"><span>Keresés a katalógusban</span><input id="asset-search-input" value="${escapeAttr(assetQuery)}" placeholder="pl. 3D, sprite, hang"></label>
+    <button id="import-local-asset" class="button small full">＋ Saját kép importálása</button><p class="asset-tip">PNG, JPG vagy WebP · legfeljebb 1 MB fájlonként</p>
     <div class="asset-section-title">INGYENES FORRÁSOK</div>${catalog.map(asset => `<article class="asset-card"><b>${escapeHtml(asset.name)}</b><small>${escapeHtml(asset.kind)}</small><p>${escapeHtml(asset.license)}</p><div><a href="${escapeAttr(asset.url)}" target="_blank" rel="noopener noreferrer">Megnyitás ↗</a><button data-save-asset="${asset.id}" ${saved.some(a => a.id === asset.id) ? "disabled" : ""}>${saved.some(a => a.id === asset.id) ? "Mentve" : "＋ Könyvtárba"}</button></div></article>`).join("") || '<p class="asset-empty">Nincs találat.</p>'}
-    <div class="asset-section-title">SAJÁT KÖNYVTÁR · ${saved.length}</div>${saved.map(asset => `<article class="asset-card saved-asset"><b>${escapeHtml(asset.name)}</b><small>${escapeHtml(asset.kind)}</small><p>${escapeHtml(asset.license)}</p><div><a href="${escapeAttr(asset.url)}" target="_blank" rel="noopener noreferrer">Forrás ↗</a><button data-remove-asset="${escapeAttr(asset.id)}">Eltávolítás</button></div></article>`).join("") || '<p class="asset-empty">Ments katalóguselemet a projekt könyvtárába.</p>'}`;
+    <div class="asset-section-title">SAJÁT KÖNYVTÁR · ${saved.length}</div>${saved.map(asset => `<article class="asset-card saved-asset">${asset.dataUrl ? `<img class="asset-thumbnail" src="${asset.dataUrl}" alt="">` : ""}<b>${escapeHtml(asset.name)}</b><small>${escapeHtml(asset.kind)}</small><p>${escapeHtml(asset.license)}</p><div>${asset.dataUrl ? `<button data-place-asset="${escapeAttr(asset.id)}">＋ Jelenethez adás</button>` : `<a href="${escapeAttr(asset.url)}" target="_blank" rel="noopener noreferrer">Forrás ↗</a>`}<button data-remove-asset="${escapeAttr(asset.id)}">Eltávolítás</button></div></article>`).join("") || '<p class="asset-empty">Importálj saját képet vagy ments katalóguselemet a könyvtárba.</p>'}`;
+  el.querySelector("#import-local-asset").addEventListener("click", () => document.querySelector("#asset-file-input").click());
   el.querySelector("#asset-search-input").addEventListener("input", e => { assetQuery = e.target.value; renderAssetLibrary(); document.querySelector("#asset-search-input").focus(); });
   el.querySelectorAll("[data-save-asset]").forEach(button => button.addEventListener("click", () => {
     const item = assetCatalog.find(asset => asset.id === button.dataset.saveAsset);
@@ -117,8 +120,22 @@ function renderAssetLibrary() {
     checkpoint(); project.assets.push({ ...item, addedAt: new Date().toISOString() }); persist(); renderAssetLibrary(); toast("Forrás hozzáadva a projekt könyvtárához");
   }));
   el.querySelectorAll("[data-remove-asset]").forEach(button => button.addEventListener("click", () => {
-    checkpoint(); project.assets = project.assets.filter(asset => asset.id !== button.dataset.removeAsset); persist(); renderAssetLibrary();
+    checkpoint();
+    const removedId = button.dataset.removeAsset;
+    project.assets = project.assets.filter(asset => asset.id !== removedId);
+    scene().objects = scene().objects.filter(object => object.assetId !== removedId);
+    if (!scene().objects.some(object => object.id === selectedId)) selectedId = scene().objects[0]?.id || null;
+    renderAll(); persist();
   }));
+  el.querySelectorAll("[data-place-asset]").forEach(button => button.addEventListener("click", () => addImageObject(button.dataset.placeAsset)));
+}
+function addImageObject(assetId) {
+  const asset = project.assets.find(item => item.id === assetId && item.dataUrl);
+  if (!asset) return;
+  checkpoint();
+  const count = scene().objects.length;
+  const object = { id: crypto.randomUUID(), assetId, name: asset.name.replace(/\.[^.]+$/, "").slice(0, 80), type: "image", x: 320 + count * 18, y: 210 + count * 16, width: 96, height: 96 };
+  scene().objects.push(object); selectedId = object.id; renderAll(); persist();
 }
 function renderInspector() {
   const o = selected();
@@ -128,13 +145,13 @@ function renderInspector() {
   content.innerHTML = `
     <div class="property-section"><div class="section-label">GENERAL <span>⌄</span></div>
       <label class="field-label">Name<input data-prop="name" value="${escapeAttr(o.name)}" maxlength="80"></label>
-      <label class="field-label">Type<div class="read-only">${o.type === "circle" ? "Circle" : "Rectangle"} <span>LOCKED</span></div></label>
+      <label class="field-label">Type<div class="read-only">${o.type === "circle" ? "Circle" : o.type === "image" ? "Image" : "Rectangle"} <span>LOCKED</span></div></label>
     </div>
     <div class="property-section"><div class="section-label">TRANSFORM <span>⌄</span></div>
       <div class="field-grid"><label class="field-label">Position X<input data-prop="x" type="number" value="${o.x}"></label><label class="field-label">Position Y<input data-prop="y" type="number" value="${o.y}"></label>
       <label class="field-label">Width<input data-prop="width" type="number" min="1" max="2000" value="${o.width}"></label><label class="field-label">Height<input data-prop="height" type="number" min="1" max="2000" value="${o.height}"></label></div>
     </div>
-    <div class="property-section"><div class="section-label">APPEARANCE <span>⌄</span></div><label class="field-label">Fill color<div class="color-field"><input data-prop="color" type="color" value="${o.color}"><code>${o.color.toUpperCase()}</code></div></label></div>
+    ${o.type === "image" ? "" : `<div class="property-section"><div class="section-label">APPEARANCE <span>⌄</span></div><label class="field-label">Fill color<div class="color-field"><input data-prop="color" type="color" value="${o.color}"><code>${o.color.toUpperCase()}</code></div></label></div>`}
     <button id="delete-object" class="button danger full">Delete object</button>`;
   content.querySelectorAll("[data-prop]").forEach(input => {
     const eventName = input.type === "color" || input.type === "text" ? "change" : "change";
@@ -162,6 +179,17 @@ class EditorScene extends Phaser.Scene {
   constructor() { super("EditorScene"); this.dragged = null; }
   create() {
     this.graphics = this.add.graphics();
+    this.assetSprites = new Map();
+    for (const asset of project.assets.filter(item => item.dataUrl)) {
+      this.textures.once(Phaser.Textures.Events.ADD_KEY + asset.id, () => {
+        if (!this.sys.isActive()) return;
+        for (const object of scene().objects.filter(item => item.type === "image" && item.assetId === asset.id)) {
+          const sprite = this.add.image(object.x, object.y, asset.id).setDisplaySize(object.width, object.height);
+          this.assetSprites.set(object.id, sprite);
+        }
+      });
+      this.textures.addBase64(asset.id, asset.dataUrl);
+    }
     this.input.on("pointerdown", pointer => {
       const world = pointer.positionToCamera(this.cameras.main);
       const hit = [...scene().objects].reverse().find(o => {
@@ -190,6 +218,12 @@ class EditorScene extends Phaser.Scene {
       g.strokePath();
     }
     for (const o of scene().objects) {
+      if (o.type === "image") {
+        const sprite = this.assetSprites.get(o.id);
+        if (sprite?.active) { sprite.setPosition(o.x, o.y).setDisplaySize(o.width, o.height); }
+        if (o.id === selectedId) { g.lineStyle(2, 0xc5baff, 1); g.strokeRect(o.x-o.width/2-5, o.y-o.height/2-5, o.width+10, o.height+10); }
+        continue;
+      }
       const color = Phaser.Display.Color.HexStringToColor(o.color).color;
       g.fillStyle(color, 1);
       if (o.type === "circle") g.fillCircle(o.x, o.y, Math.max(o.width,o.height)/2);
@@ -223,7 +257,7 @@ async function renderEngine() {
   } else {
     const babylon = await import("@babylonjs/core");
     if (generation !== engineGeneration || project.mode !== "3d") return;
-    const { Engine, Scene: BabylonScene, ArcRotateCamera, HemisphericLight, Vector3, MeshBuilder, StandardMaterial, Color3, Color4 } = babylon;
+    const { Engine, Scene: BabylonScene, ArcRotateCamera, HemisphericLight, Vector3, MeshBuilder, StandardMaterial, Texture, Color3, Color4 } = babylon;
     const canvas = document.createElement("canvas"); canvas.className = "engine-canvas"; viewport.appendChild(canvas);
     babylonEngine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
     const world = new BabylonScene(babylonEngine);
@@ -232,10 +266,12 @@ async function renderEngine() {
     camera.attachControl(canvas, true);
     new HemisphericLight("light", new Vector3(0,1,0), world);
     scene().objects.forEach((o, i) => {
-      const mesh = o.type === "circle" ? MeshBuilder.CreateSphere(o.id, { diameter: Math.max(o.width,o.height)/40, segments: 24 }, world) : MeshBuilder.CreateBox(o.id, { width:o.width/40, height:o.height/40, depth:0.3 }, world);
+      const mesh = o.type === "circle" ? MeshBuilder.CreateSphere(o.id, { diameter: Math.max(o.width,o.height)/40, segments: 24 }, world) : o.type === "image" ? MeshBuilder.CreatePlane(o.id, { width:o.width/40, height:o.height/40 }, world) : MeshBuilder.CreateBox(o.id, { width:o.width/40, height:o.height/40, depth:0.3 }, world);
       mesh.position = new Vector3((o.x-320)/40, 0.4 + i*0.02, (o.y-240)/40);
       const material = new StandardMaterial(o.id+"-mat", world);
-      material.diffuseColor = Color3.FromHexString(o.color); mesh.material = material;
+      if (o.type === "image") { const asset = project.assets.find(item => item.id === o.assetId); if (asset?.dataUrl) { material.diffuseTexture = new Texture(asset.dataUrl, world); material.backFaceCulling = false; } }
+      else material.diffuseColor = Color3.FromHexString(o.color);
+      mesh.material = material;
     });
     babylonEngine.runRenderLoop(() => world.render());
   }
@@ -251,6 +287,35 @@ document.querySelectorAll("[data-mode]").forEach(btn => btn.addEventListener("cl
 }));
 document.querySelector("#new-object").addEventListener("click", () => addObject("rect"));
 document.querySelectorAll("[data-sidebar-tab]").forEach(btn => btn.addEventListener("click", () => { sidebarTab = btn.dataset.sidebarTab; renderObjects(); renderAssetLibrary(); }));
+document.querySelector("#asset-file-input").addEventListener("change", async e => {
+  const files = [...(e.target.files || [])];
+  e.target.value = "";
+  if (!files.length) return;
+  try {
+    const allowed = new Set(["image/png", "image/jpeg", "image/webp"]);
+    const totalCurrent = (project.assets || []).reduce((sum, asset) => sum + (asset.dataUrl?.length || 0), 0);
+    const dataUrls = [];
+    let totalIncoming = 0;
+    for (const file of files) {
+      if (!allowed.has(file.type)) throw new Error("Csak PNG, JPG vagy WebP képet lehet importálni.");
+      if (file.size > 1_000_000) throw new Error(`${file.name}: a fájl nagyobb 1 MB-nál.`);
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("A fájl nem olvasható."));
+        reader.readAsDataURL(file);
+      });
+      totalIncoming += dataUrl.length;
+      dataUrls.push({ file, dataUrl });
+    }
+    if (totalCurrent + totalIncoming > 1_600_000) throw new Error("A projekthez összesen legfeljebb 1,2 MB képet lehet hozzáadni. Törölj egy képet vagy válassz kisebbeket.");
+    checkpoint();
+    for (const { file, dataUrl } of dataUrls) {
+      project.assets.push({ id: crypto.randomUUID(), name: file.name.slice(0, 100), kind: "Saját 2D kép", license: "Saját fájl · a felhasználó által megadott jogok szerint", url: "", dataUrl, addedAt: new Date().toISOString() });
+    }
+    renderAll(); persist(); toast(`${files.length} kép hozzáadva a könyvtárhoz`);
+  } catch (error) { toast("Importálási hiba: " + error.message); }
+});
 document.querySelector("#add-rect").addEventListener("click", () => addObject("rect"));
 document.querySelector("#add-circle").addEventListener("click", () => addObject("circle"));
 document.querySelector("#grid-toggle").addEventListener("click", e => {

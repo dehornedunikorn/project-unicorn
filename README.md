@@ -12,9 +12,10 @@ Install Node.js 20 or newer, then run `npm install` once and `npm run dev`. Open
 - Preview the same primitives in 3D with Babylon.js.
 - Autosave locally in the browser and import/export `.unicorn.json` project files.
 - Browse the starter asset directory and save source links with license notes into the project file.
+- Import small PNG, JPG, and WebP files, place them in the 2D scene, and carry them with project JSON exports.
 - Use the deterministic command examples in the AI panel; this is not a connected AI service.
 
-The asset directory links to external catalogs; it does not download, embed, or automatically import their files yet. Check each asset's license on its source page before shipping a game.
+External catalog links are references only. Imported local images are embedded in the project file and browser save; keep images under 1 MB each and under 1.2 MB total per project. Check each asset's license on its source page before shipping a game.
 
 ## Development principles
 
