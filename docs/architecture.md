@@ -12,12 +12,14 @@ Project Unicorn is an authoring environment, not a new rendering engine. It comp
 4. **3D adapter** — Babylon.js preview for the shared primitive scene model.
 5. **Command bridge** — allow-listed typed commands. Never evaluate generated JavaScript.
 6. **Persistence** — debounced local autosave plus backup key and portable JSON exports.
+7. **Asset directory** — curated outbound links with license notes, saved per project and included in portable JSON exports. Downloads and binary asset import are a later milestone.
 
 ## Current limitations
 
 - The 3D view is a preview adapter; inspector changes recreate the preview rather than maintaining a full editable 3D scene graph.
 - Local storage is browser/device specific. Use JSON export for a portable backup.
 - AI commands are deterministic examples. No model API is connected and no API key is required.
+- The starter asset directory saves source references and license notes only; it does not store downloaded asset files.
 - Automated tests and CI are not yet configured.
 
 ## Next milestone

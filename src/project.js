@@ -8,6 +8,7 @@ export function createProject(name = "My First Game") {
     mode: "2d",
     updatedAt: new Date().toISOString(),
     settings: { background: "#151a25", grid: true },
+    assets: [],
     scenes: [{
       id: crypto.randomUUID(),
       name: "Main Scene",
@@ -23,6 +24,8 @@ export function validateProject(input) {
   if (!input || typeof input !== "object") throw new Error("A projektnek objektumnak kell lennie.");
   if (input.schemaVersion !== SCHEMA_VERSION) throw new Error("Nem támogatott projektverzió.");
   if (typeof input.name !== "string" || !Array.isArray(input.scenes) || input.scenes.length < 1) throw new Error("Hiányzó projektadatok.");
+  if (input.assets === undefined) input.assets = [];
+  if (!Array.isArray(input.assets) || input.assets.some(asset => !asset || typeof asset.id !== "string" || typeof asset.name !== "string" || typeof asset.url !== "string" || typeof asset.license !== "string")) throw new Error("Hibás assetkönyvtár.");
   const ids = new Set();
   for (const scene of input.scenes) {
     if (!scene || typeof scene.name !== "string" || !Array.isArray(scene.objects)) throw new Error("Hibás jelenet.");

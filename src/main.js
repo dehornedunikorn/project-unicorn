@@ -1,6 +1,5 @@
 import Phaser from "phaser";
-import { Engine, Scene as BabylonScene, ArcRotateCamera, HemisphericLight, Vector3, MeshBuilder, StandardMaterial, Color3, Color4 } from "@babylonjs/core";
-import { createProject, cloneProject, validateProject } from "./project.js";
+import { createProject, validateProject } from "./project.js";
 import { saveProject, loadProject, downloadProject, readProjectFile } from "./storage.js";
 import { parseEditorCommand, applyEditorCommand } from "./ai-bridge.js";
 import "./style.css";
@@ -12,7 +11,16 @@ let statusText = restored ? "Projekt helyreállítva a helyi mentésből." : "Ú
 let history = [];
 let phaserGame = null;
 let babylonEngine = null;
+let engineGeneration = 0;
 let saveTimer = null;
+let sidebarTab = "objects";
+let assetQuery = "";
+const assetCatalog = [
+  { id: "kenney", name: "Kenney · ingyenes játékelemek", kind: "2D + 3D + hang", license: "CC0 · attribúció nem szükséges", url: "https://kenney.nl/assets", search: "kenney sprite 3d hang" },
+  { id: "kenney-3d", name: "Kenney · 3D eszközök", kind: "3D modellek", license: "A csomag oldalán ellenőrizd · jellemzően CC0", url: "https://kenney.nl/assets/category:3D", search: "kenney 3d model" },
+  { id: "poly-pizza", name: "Poly Pizza", kind: "3D modellek", license: "Modellenként CC0 vagy CC-BY · ellenőrizd a letöltésnél", url: "https://poly.pizza/", search: "poly pizza 3d low poly" },
+  { id: "opengameart", name: "OpenGameArt", kind: "2D + 3D + hang", license: "Eszközönként eltérő licenc · ellenőrizd a letöltésnél", url: "https://opengameart.org/", search: "opengameart sprites music" }
+];
 
 const app = document.querySelector("#app");
 app.innerHTML = `
@@ -25,8 +33,9 @@ app.innerHTML = `
     <aside class="sidebar">
       <div class="panel-heading"><span>PROJECT</span><button id="new-object" class="icon-button" title="Új objektum">＋</button></div>
       <div class="scene-row"><span>▧</span><div><b>Main Scene</b><small>SCENE · 01</small></div><span class="scene-menu">•••</span></div>
-      <div class="panel-heading objects-heading"><span>OBJECTS</span><span id="object-count">02</span></div>
+      <div class="sidebar-tabs"><button data-sidebar-tab="objects" class="sidebar-tab active">OBJECTS <span id="object-count">02</span></button><button data-sidebar-tab="assets" class="sidebar-tab">ASSETS</button></div>
       <div id="object-list" class="object-list"></div>
+      <div id="asset-library" class="asset-library" hidden></div>
       <div class="sidebar-footer"><span class="avatar">U</span><div><b>Unicorn Workspace</b><small>Local project</small></div><span class="status-pill">FREE</span></div>
     </aside>
     <main class="center">
@@ -82,12 +91,33 @@ function persist() {
 }
 function renderObjects() {
   document.querySelector("#object-count").textContent = String(scene().objects.length).padStart(2, "0");
+  document.querySelector("#object-list").hidden = sidebarTab !== "objects";
+  document.querySelector("#asset-library").hidden = sidebarTab !== "assets";
+  document.querySelectorAll("[data-sidebar-tab]").forEach(btn => btn.classList.toggle("active", btn.dataset.sidebarTab === sidebarTab));
   document.querySelector("#object-list").innerHTML = scene().objects.map(o => `
     <button class="object-row ${o.id === selectedId ? "selected" : ""}" data-object-id="${o.id}">
       <span class="object-glyph">${o.type === "circle" ? "◉" : "▰"}</span><span class="object-name">${escapeHtml(o.name)}</span><span class="object-color" style="background:${o.color}"></span>
     </button>`).join("");
   document.querySelectorAll("[data-object-id]").forEach(el => el.addEventListener("click", () => {
     selectedId = el.dataset.objectId; renderAll();
+  }));
+}
+function renderAssetLibrary() {
+  const el = document.querySelector("#asset-library");
+  const saved = project.assets || [];
+  const q = assetQuery.toLowerCase();
+  const catalog = assetCatalog.filter(item => `${item.name} ${item.kind} ${item.search}`.toLowerCase().includes(q));
+  el.innerHTML = `<label class="asset-search"><span>Keresés a katalógusban</span><input id="asset-search-input" value="${escapeAttr(assetQuery)}" placeholder="pl. 3D, sprite, hang"></label>
+    <div class="asset-section-title">INGYENES FORRÁSOK</div>${catalog.map(asset => `<article class="asset-card"><b>${escapeHtml(asset.name)}</b><small>${escapeHtml(asset.kind)}</small><p>${escapeHtml(asset.license)}</p><div><a href="${escapeAttr(asset.url)}" target="_blank" rel="noopener noreferrer">Megnyitás ↗</a><button data-save-asset="${asset.id}" ${saved.some(a => a.id === asset.id) ? "disabled" : ""}>${saved.some(a => a.id === asset.id) ? "Mentve" : "＋ Könyvtárba"}</button></div></article>`).join("") || '<p class="asset-empty">Nincs találat.</p>'}
+    <div class="asset-section-title">SAJÁT KÖNYVTÁR · ${saved.length}</div>${saved.map(asset => `<article class="asset-card saved-asset"><b>${escapeHtml(asset.name)}</b><small>${escapeHtml(asset.kind)}</small><p>${escapeHtml(asset.license)}</p><div><a href="${escapeAttr(asset.url)}" target="_blank" rel="noopener noreferrer">Forrás ↗</a><button data-remove-asset="${escapeAttr(asset.id)}">Eltávolítás</button></div></article>`).join("") || '<p class="asset-empty">Ments katalóguselemet a projekt könyvtárába.</p>'}`;
+  el.querySelector("#asset-search-input").addEventListener("input", e => { assetQuery = e.target.value; renderAssetLibrary(); document.querySelector("#asset-search-input").focus(); });
+  el.querySelectorAll("[data-save-asset]").forEach(button => button.addEventListener("click", () => {
+    const item = assetCatalog.find(asset => asset.id === button.dataset.saveAsset);
+    if (!item || project.assets.some(asset => asset.id === item.id)) return;
+    checkpoint(); project.assets.push({ ...item, addedAt: new Date().toISOString() }); persist(); renderAssetLibrary(); toast("Forrás hozzáadva a projekt könyvtárához");
+  }));
+  el.querySelectorAll("[data-remove-asset]").forEach(button => button.addEventListener("click", () => {
+    checkpoint(); project.assets = project.assets.filter(asset => asset.id !== button.dataset.removeAsset); persist(); renderAssetLibrary();
   }));
 }
 function renderInspector() {
@@ -124,7 +154,7 @@ function renderInspector() {
     selectedId = scene().objects[0]?.id || null; renderAll(); persist(); toast("Object deleted");
   });
 }
-function renderAll() { renderObjects(); renderInspector(); renderEngine(); }
+function renderAll() { renderObjects(); renderAssetLibrary(); renderInspector(); renderEngine(); }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function escapeAttr(s) { return escapeHtml(s); }
 
@@ -139,7 +169,7 @@ class EditorScene extends Phaser.Scene {
         if (o.type === "circle") return Math.hypot(x-o.x, y-o.y) <= Math.max(o.width,o.height)/2;
         return x >= o.x-o.width/2 && x <= o.x+o.width/2 && y >= o.y-o.height/2 && y <= o.y+o.height/2;
       });
-      if (hit) { selectedId = hit.id; this.dragged = { id: hit.id, x: world.x, y: world.y, ox: hit.x, oy: hit.y }; renderObjects(); renderInspector(); }
+      if (hit) { checkpoint(); selectedId = hit.id; this.dragged = { id: hit.id, x: world.x, y: world.y, ox: hit.x, oy: hit.y }; renderObjects(); renderInspector(); }
     });
     this.input.on("pointermove", pointer => {
       if (!this.dragged || !pointer.isDown) return;
@@ -179,7 +209,8 @@ function stopEngines() {
   if (babylonEngine) { babylonEngine.stopRenderLoop(); babylonEngine.dispose(); babylonEngine = null; }
   viewport.querySelectorAll("canvas").forEach(canvas => canvas.remove());
 }
-function renderEngine() {
+async function renderEngine() {
+  const generation = ++engineGeneration;
   stopEngines();
   const mode = project.mode;
   document.querySelectorAll("[data-mode]").forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
@@ -190,6 +221,9 @@ function renderEngine() {
       render: { antialias: true, pixelArt: false }, banner: false
     });
   } else {
+    const babylon = await import("@babylonjs/core");
+    if (generation !== engineGeneration || project.mode !== "3d") return;
+    const { Engine, Scene: BabylonScene, ArcRotateCamera, HemisphericLight, Vector3, MeshBuilder, StandardMaterial, Color3, Color4 } = babylon;
     const canvas = document.createElement("canvas"); canvas.className = "engine-canvas"; viewport.appendChild(canvas);
     babylonEngine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
     const world = new BabylonScene(babylonEngine);
@@ -204,7 +238,6 @@ function renderEngine() {
       material.diffuseColor = Color3.FromHexString(o.color); mesh.material = material;
     });
     babylonEngine.runRenderLoop(() => world.render());
-    window.addEventListener("resize", () => babylonEngine?.resize(), { once: true });
   }
 }
 function addObject(type) {
@@ -217,6 +250,7 @@ document.querySelectorAll("[data-mode]").forEach(btn => btn.addEventListener("cl
   checkpoint(); project.mode = btn.dataset.mode; renderEngine(); persist();
 }));
 document.querySelector("#new-object").addEventListener("click", () => addObject("rect"));
+document.querySelectorAll("[data-sidebar-tab]").forEach(btn => btn.addEventListener("click", () => { sidebarTab = btn.dataset.sidebarTab; renderObjects(); renderAssetLibrary(); }));
 document.querySelector("#add-rect").addEventListener("click", () => addObject("rect"));
 document.querySelector("#add-circle").addEventListener("click", () => addObject("circle"));
 document.querySelector("#grid-toggle").addEventListener("click", e => {
@@ -250,5 +284,5 @@ window.addEventListener("beforeunload", () => { try { saveProject(project); } ca
 window.addEventListener("resize", () => { if (project.mode === "3d") babylonEngine?.resize(); });
 document.querySelector("#grid-toggle").classList.toggle("active", project.settings.grid);
 document.querySelector("#save-status").textContent = restored ? "✓ Recovered" : "Ready";
-renderObjects(); renderInspector(); renderEngine();
+renderObjects(); renderAssetLibrary(); renderInspector(); renderEngine();
 if (!restored) persist();
